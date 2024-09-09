@@ -1,0 +1,229 @@
+---
+title: "Análisis Financiero del Flujo de Caja"
+author: "Distribuidora del Sur, S.A."
+output: rmarkdown::github_document
+always_allow_html: true
+---
+
+```{r librerias}
+library(ggplot2)
+library(readr)
+library(knitr)
+library(dplyr)
+```
+
+
+
+```{r carga de datos}
+data <- read_csv("C:/Users/barri/Documents/UFM/2024/Segundo Semestre/Data Wrangling/Analisis de Flujo de Caja y Gestión/tabla_completa.csv", locale = locale(encoding = "latin1"))
+
+```
+```{r 1. Análisis General del Flujo de Caja}
+flujo_caja <- data %>%
+  group_by(CLIENTE) %>%
+  summarise(
+    Dias_de_Credito_Promedio = mean(CREDITO, na.rm = TRUE),
+    Ingreso_Promedio = mean(Q, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Ingreso_Promedio)) %>%
+  mutate(Flujo_de_Caja_Acumulado = cumsum(Ingreso_Promedio))
+```
+
+
+```{r estadisticas de ingresos}
+# Calcular el flujo de caja acumulado por cliente
+flujo_caja <- data %>%
+  group_by(CLIENTE) %>%
+  summarise(
+    Dias_de_Credito_Promedio = mean(CREDITO, na.rm = TRUE),
+    Ingreso_Promedio = mean(Q, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Ingreso_Promedio)) %>%
+  mutate(Flujo_de_Caja_Acumulado = cumsum(Ingreso_Promedio))
+
+# Resumen estadístico de los ingresos
+summary(flujo_caja$Ingreso_Promedio)
+
+# Gráfico de caja y bigotes de ingresos
+ggplot(flujo_caja, aes(x = "", y = Ingreso_Promedio)) +
+    geom_boxplot(fill = "skyblue") +
+    labs(title = "Distribución de Ingresos por Cliente", y = "Ingreso Promedio") +
+    theme_minimal()
+
+# Gráfico de ingresos acumulados
+ggplot(flujo_caja, aes(x = reorder(CLIENTE, Ingreso_Promedio), y = Ingreso_Promedio)) +
+    geom_bar(stat = "identity", fill = "darkblue") +
+    labs(title = "Ingresos Acumulados por Cliente", x = "Clientes", y = "Ingreso Promedio") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+```
+
+```{r 3. Análisis de Clientes}
+# Desempeño de pilotos por viajes
+pilotos_desempeno <- data %>%
+  group_by(PILOTO) %>%
+  summarise(Viajes_Completados = n(), Ingreso_Total = sum(Q), Ingreso_Promedio = mean(Q))
+
+# Mostrar la tabla de desempeño de pilotos
+kable(pilotos_desempeno, col.names = c("Piloto", "Viajes Completados", "Ingreso Total", "Ingreso Promedio"))
+
+# Librerías necesarias
+library(ggplot2)
+
+# Gráfico de Barras: Viajes Completados por Piloto
+ggplot(pilotos_desempeno, aes(x = reorder(Piloto, -Viajes_Completados), y = Viajes_Completados, fill = Piloto)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#66c2a5", "#3288bd", "#8da0cb", "#e0f3f8", "#a6d854")) +  # Colores personalizados
+  labs(title = "Viajes Completados por Piloto", x = "Piloto", y = "Viajes Completados") +
+  theme_minimal()
+ 
+
+
+# Desempeño de vehículos
+vehiculos_desempeno <- data %>%
+  group_by(UNIDAD) %>%
+  summarise(Viajes_Completados = n(), Ingreso_Total = sum(Q), Ingreso_Promedio = mean(Q))
+
+# Mostrar la tabla de desempeño de vehículos
+kable(vehiculos_desempeno, col.names = c("Vehículo", "Viajes Completados", "Ingreso Total", "Ingreso Promedio"))
+
+# Gráfico de desempeño de vehículos
+ggplot(vehiculos_desempeno, aes(x = reorder(UNIDAD, -Ingreso_Total), y = Ingreso_Total)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Desempeño de Vehículos", x = "Vehículo", y = "Ingreso Total") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+```{r}
+# Análisis de Pareto de clientes
+pareto_agg <- flujo_caja %>%
+  arrange(desc(Ingreso_Promedio)) %>%
+  mutate(Cumulative_Risk = cumsum(Ingreso_Promedio) / sum(Ingreso_Promedio) * 100)
+
+# Gráfico de Pareto - Clientes más importantes
+ggplot(pareto_agg, aes(x = reorder(CLIENTE, -Ingreso_Promedio), y = Cumulative_Risk)) +
+  geom_line(color = "blue", size = 1) +
+  geom_point() +
+  labs(title = "Análisis de Pareto - Clientes más Importantes", x = "Cliente", y = "Porcentaje Acumulado de Ingresos") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+```{r}
+# Clasificar clientes en niveles de riesgo según días de crédito
+flujo_caja$Nivel_Riesgo <- cut(flujo_caja$Dias_de_Credito_Promedio, 
+                               breaks = c(-Inf, 30, 60, Inf), 
+                               labels = c("Bajo", "Medio", "Alto"))
+
+# Simulación del impacto si los clientes de alto riesgo no pagan
+flujo_caja$Ingreso_Simulado <- ifelse(flujo_caja$Nivel_Riesgo == "Alto", 0, flujo_caja$Ingreso_Promedio)
+flujo_caja$Flujo_Caja_Simulado <- cumsum(flujo_caja$Ingreso_Simulado)
+
+# Mostrar la tabla con los ingresos simulados
+kable(flujo_caja[, c("CLIENTE", "Ingreso_Promedio", "Ingreso_Simulado", "Flujo_de_Caja_Acumulado", "Flujo_Caja_Simulado")],
+      col.names = c("Cliente", "Ingreso Promedio", "Ingreso Simulado", "Flujo de Caja Acumulado", "Flujo de Caja Simulado"),
+      caption = "Simulación del Impacto en el Flujo de Caja si los Clientes de Alto Riesgo no Pagan")
+
+```
+```{r}
+# Supongamos que queremos aumentar las tarifas en un 10%
+incremento_tarifa <- 1.10  # Aumento del 10%
+
+# Crear una nueva columna que simula el ingreso con el incremento de tarifas
+flujo_caja$Ingreso_Simulado <- flujo_caja$Ingreso_Promedio * incremento_tarifa
+
+# Calcular el flujo de caja simulado acumulado
+flujo_caja$Flujo_Caja_Actual <- cumsum(flujo_caja$Ingreso_Promedio)
+flujo_caja$Flujo_Caja_Simulado <- cumsum(flujo_caja$Ingreso_Simulado)
+
+# Mostrar la tabla comparativa de flujo de caja actual vs simulado
+kable(flujo_caja[, c("CLIENTE", "Ingreso_Promedio", "Ingreso_Simulado", "Flujo_Caja_Actual", "Flujo_Caja_Simulado")],
+      col.names = c("Cliente", "Ingreso Promedio Actual", "Ingreso Simulado", "Flujo de Caja Actual", "Flujo de Caja Simulado"),
+      caption = "Comparación del Flujo de Caja Actual vs Simulado con Incremento de Tarifas")
+
+# Gráfico de la comparación del flujo de caja actual vs simulado
+ggplot(flujo_caja, aes(x = reorder(CLIENTE, Ingreso_Promedio))) +
+  geom_bar(aes(y = Flujo_Caja_Actual), stat = "identity", fill = "blue", alpha = 0.6, width = 0.4, position = position_nudge(x = -0.2)) +
+  geom_bar(aes(y = Flujo_Caja_Simulado), stat = "identity", fill = "green", alpha = 0.6, width = 0.4, position = position_nudge(x = 0.2)) +
+  labs(title = "Flujo de Caja Actual vs Simulado con Incremento de Tarifas", x = "Clientes", y = "Flujo de Caja Acumulado") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(name = "Escenario", values = c("blue" = "Actual", "green" = "Simulado"))
+
+```
+```{r}
+# Nueva política de crédito: los clientes deben pagar en un máximo de 30 días
+dias_credito_nueva_politica <- 30
+
+# Crear una nueva columna que simula los ingresos bajo la nueva política de crédito
+# Si los días de crédito actuales son mayores que 30, se ajustan a 30
+flujo_caja$Dias_de_Credito_Simulado <- ifelse(flujo_caja$Dias_de_Credito_Promedio > dias_credito_nueva_politica, 
+                                              dias_credito_nueva_politica, 
+                                              flujo_caja$Dias_de_Credito_Promedio)
+
+# Calcular el flujo de caja bajo la nueva política de crédito
+# El impacto se refleja en que el ingreso se mantiene, pero los días de crédito se reducen
+flujo_caja$Flujo_Caja_Actual <- cumsum(flujo_caja$Ingreso_Promedio)
+flujo_caja$Ingreso_Simulado <- flujo_caja$Ingreso_Promedio  # Ingreso se mantiene igual
+flujo_caja$Flujo_Caja_Simulado <- cumsum(flujo_caja$Ingreso_Simulado)
+
+# Mostrar la tabla comparativa de días de crédito actual vs simulado
+kable(flujo_caja[, c("CLIENTE", "Dias_de_Credito_Promedio", "Dias_de_Credito_Simulado", "Ingreso_Promedio", "Flujo_Caja_Actual", "Flujo_Caja_Simulado")],
+      col.names = c("Cliente", "Días de Crédito Actual", "Días de Crédito Simulado", "Ingreso Promedio", "Flujo de Caja Actual", "Flujo de Caja Simulado"),
+      caption = "Comparación del Flujo de Caja con la Nueva Política de Crédito de 30 Días")
+
+# Gráfico de la comparación del flujo de caja actual vs simulado
+ggplot(flujo_caja, aes(x = reorder(CLIENTE, Ingreso_Promedio))) +
+  geom_bar(aes(y = Flujo_Caja_Actual), stat = "identity", fill = "blue", alpha = 0.6, width = 0.4, position = position_nudge(x = -0.2)) +
+  geom_bar(aes(y = Flujo_Caja_Simulado), stat = "identity", fill = "green", alpha = 0.6, width = 0.4, position = position_nudge(x = 0.2)) +
+  labs(title = "Flujo de Caja Actual vs Simulado con Nueva Política de Crédito de 30 Días", x = "Clientes", y = "Flujo de Caja Acumulado") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(name = "Escenario", values = c("blue" = "Actual", "green" = "Simulado"))
+
+```
+```{r}
+# Supongamos que las cuentas por cobrar y las ventas totales se calculan con base en los ingresos actuales
+
+# Total de ingresos (ventas totales)
+total_ingresos <- sum(flujo_caja$Ingreso_Promedio, na.rm = TRUE)
+
+# Total de cuentas por cobrar actuales (asumido como la suma de los ingresos promedio actuales)
+total_cuentas_por_cobrar_actual <- sum(flujo_caja$Ingreso_Promedio * flujo_caja$Dias_de_Credito_Promedio / 365)
+
+# Calcular el DSO actual
+DSO_actual <- (total_cuentas_por_cobrar_actual / total_ingresos) * 365
+print(paste("DSO Actual:", round(DSO_actual, 2), "días"))
+
+# Simulación de la nueva política de crédito a 30 días
+# Total de cuentas por cobrar bajo la nueva política de 30 días
+total_cuentas_por_cobrar_simulado <- sum(flujo_caja$Ingreso_Promedio * 30 / 365)
+
+# Calcular el DSO simulado con la nueva política
+DSO_simulado <- (total_cuentas_por_cobrar_simulado / total_ingresos) * 365
+print(paste("DSO Simulado con Política de 30 Días:", round(DSO_simulado, 2), "días"))
+
+# Comparación de cuántos días se recuperarían con la nueva política
+dias_recuperacion_reduccion <- DSO_actual - DSO_simulado
+print(paste("Con la nueva política, se reducirían", round(dias_recuperacion_reduccion, 2), "días para recuperar el capital total."))
+
+```
+```{r}
+# Calcular el flujo de caja acumulado actual
+flujo_caja$Flujo_Caja_Actual <- cumsum(flujo_caja$Ingreso_Promedio)
+
+# Calcular el flujo de caja acumulado simulado con la nueva política de 30 días de crédito
+# Ingresos permanecen iguales, pero los pagos se aceleran
+flujo_caja$Flujo_Caja_Simulado <- cumsum(flujo_caja$Ingreso_Promedio * 30 / flujo_caja$Dias_de_Credito_Promedio)
+
+# Flujo total actual
+flujo_total_actual <- sum(flujo_caja$Flujo_Caja_Actual, na.rm = TRUE)
+
+# Flujo total simulado con la nueva política de 30 días
+flujo_total_simulado <- sum(flujo_caja$Flujo_Caja_Simulado, na.rm = TRUE)
+
+# Calcular el aumento en el flujo total
+aumento_flujo_total <- flujo_total_simulado - flujo_total_actual
+print(paste("El aumento en el flujo de caja total con la nueva política de 30 días sería de:", round(aumento_flujo_total, 2)))
+
+```
+
